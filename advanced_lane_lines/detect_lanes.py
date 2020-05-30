@@ -14,25 +14,30 @@ Class used to detect lanes on a road with a forward facing camera
 class LaneDetector:
 
 
-    def __init__(self,mtx=None,dist=None,hls_thresh=(125,255)):
+    def __init__(self,mtx=None,dist=None,hls_thresh=(80,255),colour_thresh=(150,255)):
         
         self.mtx = mtx
         self.dist = dist
         self.hls_thresh = hls_thresh
+        self.colour_thresh = colour_thresh
+
         self.gray_shape = None
+        
+        self.colors = {'red':0,'green':1,'blue':2}
            
     ''' 
     ==========================================================================================================================
     calibrate_camera 
     ==========================================================================================================================
 
-        train_files: list of objects to be used for training
-        test_files (optional): list of objects to demonstrate that the function calculates the correct coefficients
-        shape: number of corners expected to be found on each chessboard (row x col)
-        verbose (optional): if set ot non-zero, this function will display debug messages
+    Arguments:
+    
+        - train_files: list of objects to be used for training
+        - test_files (optional): list of objects to demonstrate that the function calculates the correct coefficients
+        - shape: number of corners expected to be found on each chessboard (row x col)
+        - verbose (optional): if set ot non-zero, this function will display debug messages
 
     ==========================================================================================================================
-
     This method starts by preparing object points, which will be the (x, y, z) coordinates of the chessboard corners in the 
     world. Here I am assuming the chessboard is fixed on the (x, y) plane at z=0, such that the object points are the same for 
     each calibration image.
@@ -105,9 +110,16 @@ class LaneDetector:
             
     '''
     ==========================================================================================================================
-    
     test_undistort
+    ==========================================================================================================================
+
+    Arguments:
     
+        - file_names: list of files that are to be undistorted for test
+
+    ==========================================================================================================================
+    This method navigates through a list of files, and applies the undistort method to each of them, displaying the original 
+    and the undistorted image, side by side
     ==========================================================================================================================
     '''
     
@@ -134,10 +146,18 @@ class LaneDetector:
 
     
     '''
-    ==========================================================================================================================
-    
+    ==========================================================================================================================  
     Undistort
+    ==========================================================================================================================
+
+    Arguments:
     
+        - img: image to be undistorted
+
+    ==========================================================================================================================
+    This method undistorts an image, based on the mtx and dist factors, created during calibration.
+    
+    NB -> the camera calibration must have been run before this method is effective
     ==========================================================================================================================
     '''
     
@@ -152,9 +172,17 @@ class LaneDetector:
 
     '''
     ==========================================================================================================================
-
     hls_select
+    ==========================================================================================================================
 
+    Arguments:
+    
+        - img: image to be processed
+        - thresh: threshold of values to be selected as white
+
+    ==========================================================================================================================
+    this method isolates the s channel
+    and applies a binary (black or white), return white for those pixels that fall within a selected threshold
     ==========================================================================================================================
 
     '''
@@ -169,13 +197,86 @@ class LaneDetector:
         binary_output[(s_channel > thresh[0]) & (s_channel <= thresh[1])] = 1
         return binary_output
 
-
     '''
     ==========================================================================================================================
+    colour_select
+    ==========================================================================================================================
 
+    Arguments:
+    
+        - img: image to be processed
+        - color (optional): color to be selected: 'red','green', or 'blue'
+        - thresh (optional): threshold of values to be selected as white
+
+    ==========================================================================================================================
+    this method isolates the s channel
+    and applies a binary (black or white), return white for those pixels that fall within a selected threshold
+    ==========================================================================================================================
+
+    '''
+    def colour_select(self,img, color='green', thresh=None):
+
+        if thresh == None:
+            thresh = self.colour_thresh
+        
+        sel_channel = img[:,:,self.colors[color]]
+        binary_output = np.zeros_like(sel_channel)
+        binary_output[(sel_channel > thresh[0]) & (sel_channel <= thresh[1])] = 1
+        return binary_output
+    
+    '''
+    ==========================================================================================================================
+    abs_sobel_thresh
+    ==========================================================================================================================
+
+    Arguments:
+    
+        - img: image to be processed
+        - orient (defaults to 'x'): orientation
+        - thresh_min: minimum of values to be selected as white
+        - thresh_max: maximum of values to be selected as white
+
+    ==========================================================================================================================
+    Applies sobel filter and returns a binary based on it
+    ==========================================================================================================================
+
+    '''    
+    def abs_sobel_thresh(self, img, orient='x', thresh_min=0, thresh_max=255):
+        # Convert to grayscale
+        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        # Apply x or y gradient with the OpenCV Sobel() function
+        # and take the absolute value
+        if orient == 'x':
+            abs_sobel = np.absolute(cv2.Sobel(gray, cv2.CV_64F, 1, 0))
+        if orient == 'y':
+            abs_sobel = np.absolute(cv2.Sobel(gray, cv2.CV_64F, 0, 1))
+        # Rescale back to 8 bit integer
+        scaled_sobel = np.uint8(255*abs_sobel/np.max(abs_sobel))
+        # Create a copy and apply the threshold
+        binary_output = np.zeros_like(scaled_sobel)
+        # Here I'm using inclusive (>=, <=) thresholds, but exclusive is ok too
+        binary_output[(scaled_sobel >= thresh_min) & (scaled_sobel <= thresh_max)] = 1
+
+        # Return the result
+        return binary_output
+    
+    
+    
+    
+    '''
+    ==========================================================================================================================
     mag_thresh
+    ==========================================================================================================================
 
-    =========================================================================================================================
+    Arguments:
+    
+        - img: image to be processed
+        - sobel_kernel: (defaults to 3)
+        - max_thresh: mag threshold
+
+    ==========================================================================================================================
+    Applies mag threshold
+    ==========================================================================================================================
     '''
     def mag_thresh(self,img, sobel_kernel=3, mag_thresh=(0, 255)):
         # Convert to grayscale
@@ -196,11 +297,50 @@ class LaneDetector:
         return binary_output
 
     '''
+    ==========================================================================================================================
+    lane_binary
     =========================================================================================================================
-
-    warper
+    Arguments:
     
-    =========================================================================================================================
+        - img: image to be processed
+
+    ==========================================================================================================================
+    Apply several a combinatio of colour and gradient transforms to detect the best lane binary
+    ==========================================================================================================================
+
+    '''  
+    def lane_binary(self,img):
+    
+        # now do gradient a transform to get a binary
+        hls_binary = self.hls_select(img)
+
+        # now do colour gradient a transform to get a binary
+        colour_binary = self.colour_select(img)
+
+        sob_binary = self.abs_sobel_thresh(img, orient='x', thresh_min=30, thresh_max=100)
+
+        # combining binaries ... this will be the content of method lane_binary()
+        combined = np.zeros_like(hls_binary)
+        combined[((hls_binary == 1) & (colour_binary == 1) | (sob_binary == 1))] = 1
+
+        return combined
+    
+    
+    '''
+    ==========================================================================================================================
+    warper
+    ==========================================================================================================================
+
+    Arguments:
+    
+        - img: image to be processed
+        - src: four source points in the image to be preocessed (to be warped - normally a trapesoid)
+        - dst: four source points in the image after preocessed (after warped - normally a rectangle)
+
+    ==========================================================================================================================
+    this function warps the image, to change the perspective
+    ==========================================================================================================================
+
     '''
     def warper(self,img, src=None, dst=None):
         
@@ -218,11 +358,18 @@ class LaneDetector:
         return warped
 
     '''
-    =========================================================================================================================
+    ==========================================================================================================================
+    set_src_dst
+    ==========================================================================================================================
 
-    get_src_dst
+    Arguments:
     
-    =========================================================================================================================
+        - img_size: the image size as reference
+
+    ==========================================================================================================================
+    adjusts hardcoded src and dst to the picture size 
+    ==========================================================================================================================
+
     '''
     def set_src_dst(self,img_size):
 
@@ -240,15 +387,22 @@ class LaneDetector:
         return self.src, self.dst
 
     '''
-    =========================================================================================================================
-
+    ==========================================================================================================================
     find_lane_pixels
+    ==========================================================================================================================
+
+    Arguments:
     
-    =========================================================================================================================
+        - binary_warped: an image that has been warped and binarised
+
+    ==========================================================================================================================
+    Applies histogram to find two lanes in an warped, binarised image
+    ==========================================================================================================================
 
     '''
 
     def find_lane_pixels(self,binary_warped):
+        
         # Take a histogram of the bottom half of the image
         histogram = np.sum(binary_warped[binary_warped.shape[0]//2:,:], axis=0)
         # Create an output image to draw on and visualize the result
@@ -327,18 +481,53 @@ class LaneDetector:
         rightx = nonzerox[right_lane_inds]
         righty = nonzeroy[right_lane_inds]
 
-        return leftx, lefty, rightx, righty, out_img
-
+        return leftx, lefty, rightx, righty, midpoint, out_img
 
     '''
-    =========================================================================================================================
-
+    ==========================================================================================================================
     convert_to_metres
+    ==========================================================================================================================
+
+    Arguments:
     
-    =========================================================================================================================
+        - left: x of left lane at the bottom of the picture
+        - right:  x of right lane at the bottom of the picture
+        - midpoint: midpoint of the bottom of the picture
+        
+    ==========================================================================================================================
+    returns how many pictures off centre the middle of the lanes is (in pixels)
+    ==========================================================================================================================
+
+    '''
+    def get_offcentre(self,left,right,midpoint):
+        
+        mid_lanes = (left + right) / 2
+        
+        if mid_lanes <= midpoint:
+            return midpoint - mid_lanes , 'left'
+        else:
+            return mid_lanes - midpoint, 'right'
+    
+
+    '''
+    ==========================================================================================================================
+    convert_to_metres
+    ==========================================================================================================================
+
+    Arguments:
+    
+        - leftx: list of x values for left lane
+        - rightx:  list of x values for right lane
+        - ploty: list of y values for both left and right lane
+        - moidpoint: midpoint at the bottom of the picture
+        
+    ==========================================================================================================================
+    Converts xs, ys, and midpoint to metres (given in pixels)
+    ==========================================================================================================================
+
     '''
 
-    def convert_to_metres(self,leftx,rightx,ploty):
+    def convert_to_metres(self,leftx,rightx,ploty,midpoint):
         # Define conversions in x and y from pixels space to meters
         ym_per_pix = 30/720 # meters per pixel in y dimension
         xm_per_pix = 3.7/700 # meters per pixel in x dimension
@@ -351,19 +540,32 @@ class LaneDetector:
         # Fit new polynomials to x,y in world space
         left_fit_cr = np.polyfit(ploty*ym_per_pix, leftx*xm_per_pix, 2)
         right_fit_cr = np.polyfit(ploty*ym_per_pix, rightx*xm_per_pix, 2)
+        
+        
+        offcentre, position = self.get_offcentre(leftx[-1],rightx[-1],midpoint)
+        
+        offcentre_cr = offcentre*xm_per_pix
 
-        return left_fit_cr, right_fit_cr
+        return left_fit_cr, right_fit_cr, offcentre_cr, position
 
     '''
-    =========================================================================================================================
-   
-    fit_polynomial    
+    ==========================================================================================================================
+    fit_polynomial
+    ==========================================================================================================================
+
+    Arguments:
     
-    =========================================================================================================================    
+        - binary_warped: an image that has been warped and binarised
+        
+    ==========================================================================================================================
+    Finds two lanes (left and white) on an image that has been warped, and binarised (identifying potential lanes), and fits
+    to polynomials to it, containing two lanes
+    ==========================================================================================================================
+
     '''
     def fit_polynomial(self,binary_warped,plot=False):
         # Find our lane pixels first
-        leftx, lefty, rightx, righty, out_img = self.find_lane_pixels(binary_warped)
+        leftx, lefty, rightx, righty, midpoint, out_img = self.find_lane_pixels(binary_warped)
 
         # Fit a second order polynomial to each using `np.polyfit`
         left_fit = np.polyfit(lefty, leftx, 2)
@@ -395,19 +597,27 @@ class LaneDetector:
         polig_y = np.concatenate((ploty[ploty.shape[0]//2:],ploty[ploty.shape[0]//2:][::-1]))
 
 
+        left_fit_cr, right_fit_cr, offcentre_cr, position = self.convert_to_metres(left_fitx, right_fitx, ploty, midpoint)
 
-        left_fit_cr, right_fit_cr = self.convert_to_metres(left_fitx, right_fitx, ploty)
-
-        return out_img, left_fit_cr, right_fit_cr, ploty, polig_x, polig_y
+        return out_img, left_fit_cr, right_fit_cr, offcentre_cr, position, ploty, polig_x, polig_y
 
 
 
     '''
-    =========================================================================================================================
+    ==========================================================================================================================
+    measure_curvature_real
+    ==========================================================================================================================
+
+    Arguments:
     
-    measure_curvature_real    
-    
-    =========================================================================================================================
+        - left_fit_cr: xs of left polynomial, representing left lane
+        - right_fit_cr: xs of rigth polynomial, representing right lane
+        - ploty: ys of both polynomials (0..height of image)
+        
+    ==========================================================================================================================
+    Measures curvature of both left and right polynomial (assuming they are both of second order)
+    ==========================================================================================================================
+
     '''
     def measure_curvature_real(self,left_fit_cr, right_fit_cr, ploty):
         '''
@@ -430,13 +640,22 @@ class LaneDetector:
 
 
     '''
-    =========================================================================================================================
-   
+    ==========================================================================================================================
     map_lane
+    ==========================================================================================================================
+
+    Arguments:
     
-    =========================================================================================================================
+        - lmx: xs of corners
+        - lmy: ys of corners
+        - img: colour image that will received the lane
+        
+    ==========================================================================================================================
+    draws the lane (in green) ahead of the car, on the provided image
+    ==========================================================================================================================
+
     '''
-    def map_lane(self,lmx,lmy,img,src=None,dst=None):
+    def map_lane(self,lmx,lmy,img,messages, src=None,dst=None):
         
         if src == None:
             src = self.src
@@ -459,18 +678,38 @@ class LaneDetector:
         mask = self.warper(mask,self.dst,self.src)
 
         # applying the mask to original image
-        return cv2.addWeighted(canvas,1,mask,0.5,0)
-
-
+        canvas =  cv2.addWeighted(canvas,1,mask,0.5,0)
+        
+        canvas = cv2.putText(canvas, messages[0], (50,60), 
+                             cv2.FONT_HERSHEY_SIMPLEX, #font family
+                             2, #font size
+                             (255,255, 255), #font color
+                             3) 
+        
+        canvas = cv2.putText(canvas, messages[1], (50,120), 
+                             cv2.FONT_HERSHEY_SIMPLEX, #font family
+                             2, #font size
+                             (255,255, 255), #font color
+                             3) 
+        
+        return canvas
 
     '''
-    =========================================================================================================================
-   
-    find lanes
+    ==========================================================================================================================
+    find_lanes
+    ==========================================================================================================================
+
+    Arguments:
     
-    =========================================================================================================================
+        - img: colour image of the road, taken from a front-face camera
+        - method (defaults to 'combo'): which gradient or method to use to find the lanes ('combo','lhs' or 'color')
+        
+    ==========================================================================================================================
+    Full pipeline to find the lanes marked on the road, calculat its curvature and draw it on the image provided
+    ==========================================================================================================================
+
     '''
-    def find_lanes(self,img,verbose=0):
+    def find_lanes(self,img,method='combo',verbose=0):
 
         try:
 
@@ -483,17 +722,27 @@ class LaneDetector:
             # warp image
             warped = self.warper(imgu)
 
-            # apply image thresholding and colour gradient
-            imgu = self.hls_select(warped)
-            
+            if method == 'lhs':
+                # apply image thresholding and colour gradient
+                imgu = self.hls_select(warped)
+            elif method == 'colour':
+                # apply image thresholding and colour gradient
+                imgu = self.colour_select(warped)
+            else:
+                imgu = self.lane_binary(warped)
+                
             # find lane lines
-            with_lanes, left_fit_cr, right_fit_cr, ploty, polig_x, polig_y = self.fit_polynomial(imgu)
+            with_lanes, left_fit_cr, right_fit_cr, offcentre_cr, position, ploty, polig_x, polig_y = self.fit_polynomial(imgu)
 
             # Calculate the radius of curvature in meters for both lane lines
             left_curverad, right_curverad = self.measure_curvature_real(left_fit_cr, right_fit_cr, ploty)
 
+            messages = ['Radius of Curvature = {0:.0f}(m)'.format((left_curverad + right_curverad) / 2),
+                        'Vehicle is {0:.2f}m {1:} of centre'.format(offcentre_cr,position) ]
+
+            
             # map the lane ahead 
-            result = self.map_lane(polig_x,polig_y,img)
+            result = self.map_lane(polig_x,polig_y,img, messages)
 
             # return picture with lane
             return result
