@@ -15,7 +15,7 @@
 
 #### 1. Briefly state how you computed the camera matrix and distortion coefficients. Provide an example of a distortion corrected calibration image.
 
-The code for this step is contained in method `LaneDetector.calibrate_camera()` in file [./advanced_lane_lines/detect_lanes.py](./advanced-lane-lines/detect-lanes.py)
+The code for this step is contained in method `LaneDetector.calibrate_camera()` in file [./advanced_lane_lines/detect_lanes.py](./advanced_lane_lines/detect_lanes.py)
 
 I start by preparing `object points`, which will be the (x, y, z) coordinates of the chessboard corners in the world. Here I am assuming the chessboard is fixed on the (x, y) plane at z=0, such that the object points are the same for each calibration image.  
 
@@ -233,7 +233,7 @@ To demonstrate this step, I will describe how I apply the distortion correction 
 ## Step 1 
 One way to undistort an image **would be** simply calling the method `cv2.undistort()` passing the `lane_detector.mtx` and `detect_lanes.dist` worked out in the previous step.
 
-However, my choice was to create a method in class `LaneDetector` in file [./advanced_lane_lines/detect_lanes.py](./advanced-lane-lines/detect-lanes.py). The method `LaneDetector.undistort()` remembers the coefficients worked out in the calibration, and work very similarly to `cv2.undistort()` - and this is the method that I will be calling from now on.
+However, my choice was to create a method in class `LaneDetector` in file [./advanced_lane_lines/detect_lanes.py](./advanced_lane_lines/detect_lanes.py). The method `LaneDetector.undistort()` remembers the coefficients worked out in the calibration, and work very similarly to `cv2.undistort()` - and this is the method that I will be calling from now on.
 
 The cell below shows the method applied to one test image, from folder [./test_images/](./test_images):
 
@@ -260,7 +260,7 @@ I used a combination of color and gradient thresholds to generate a binary image
 
 Below are 5 types of gradients and filters that I tried before settling for the combination of three of them (**combined**)
 
-Eventually, I created a method called `LaneDetector.lane_binary()` (in file [./advanced_lane_lines/detect_lanes.py](./advanced-lane-lines/detect-lanes.py) ) - which I plan to use from now on.
+Eventually, I created a method called `LaneDetector.lane_binary()` (in file [./advanced_lane_lines/detect_lanes.py](./advanced_lane_lines/detect_lanes.py) ) - which I plan to use from now on.
 
 Here are my studies in colour transforms before settling for a combination of them - testing images provided in folder [./test_images/](./test_images) 
 
@@ -406,7 +406,7 @@ for file in files:
 
 #### 3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
 
-The code for my perspective transform includes a method called `LaneDetector.warper()`, which appears in file [./advanced_lane_lines/detect_lanes.py](./advanced-lane-lines/detect-lanes.py).  
+The code for my perspective transform includes a method called `LaneDetector.warper()`, which appears in file [./advanced_lane_lines/detect_lanes.py](./advanced_lane_lines/detect_lanes.py).  
 
 The `LaneDetector.warper()` method takes as inputs an image (`img`), as well as source (`src`) and destination (`dst`) points.  
 
@@ -607,7 +607,7 @@ for file in files:
 
 #### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
-I did this in methods `LaneDetector.measure_curvature_real()`, in file [./advanced_lane_lines/detect_lanes.py](./advanced-lane-lines/detect-lanes.py).
+I did this in methods `LaneDetector.measure_curvature_real()`, in file [./advanced_lane_lines/detect_lanes.py](./advanced_lane_lines/detect_lanes.py).
 
 The method is defined in this tutorial [awesome tutorial](https://www.intmath.com/applications-differentiation/8-radius-curvature.php) - basically it is measuring the radius of the approximating circle to the curve.
 
@@ -629,7 +629,7 @@ Here's an example of my output for this step, testing images provided in in fold
 
 #### 6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
 
-I implemented this step in the method `LaneDetector.map_lane()`, in file [./advanced_lane_lines/detect_lanes.py](./advanced-lane-lines/detect-lanes.py).
+I implemented this step in the method `LaneDetector.map_lane()`, in file [./advanced_lane_lines/detect_lanes.py](./advanced_lane_lines/detect_lanes.py).
 
 Here are examples of my results testing images provided in in folder [./test_images/](./test_images) 
 
